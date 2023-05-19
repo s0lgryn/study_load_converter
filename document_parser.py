@@ -76,5 +76,20 @@ def find_entry_year(sheet: Worksheet):
                     print(f"Не был найден год поступления. {e}")
 
 
+def find_course_boundaries(sheet: Worksheet, today_year: int, entry_year: int) -> Union[List[int], None]:
+    course_number = today_year - entry_year + 1
+    pattern = r"[а-яА-Я]{4}\s+" + str(course_number)
+    try:
+        for row in sheet.iter_rows(max_row=5):
+            for cell in row:
+                if cell.value and isinstance(cell.value, str) and re.search(pattern, cell.value):
+                    for merged_range in sheet.merged_cells.ranges:
+                        if cell.coordinate in merged_range:
+                            return [merged_range.min_col, merged_range.max_col]
+    except Exception as e:
+        print(f"Границы курса были не найдены. {e}")
+    return None
+
+
 if __name__ == '__main__':
     main()
