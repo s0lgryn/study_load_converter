@@ -65,5 +65,16 @@ def extract_data_from_filename(filename: str) -> dict[str, int]:
         return file_dict
 
 
+def find_entry_year(sheet: Worksheet):
+    for row in sheet.iter_rows(min_row=20, max_row=60, values_only=True):
+        for cell in row:
+            if cell is not None:
+                try:
+                    if re.search(r"^\d{4}$", str(cell)):
+                        return cell
+                except Exception as e:
+                    print(f"Не был найден год поступления. {e}")
+
+
 if __name__ == '__main__':
     main()
