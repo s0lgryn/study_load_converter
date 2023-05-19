@@ -1,5 +1,3 @@
-from datetime import date
-
 SPECIALIZATIONS = {
     "Программирование в компьютерных системах": "ПКС",
     "Информационные системы и программирование": "ИСП",
@@ -31,7 +29,6 @@ COLUMNS = [
     "Всего ауд. часов", "Всего часов", "Ф.И.О. преподавателя"
 ]
 
-DATA_DIR = "converter"
+DATA_DIR = "converter/"
+STUDY_PLANS_DIR = "study_plans/"
 FILENAME = "Тарификация"
-TODAY_YEAR = date.today().year
-NEXT_YEAR = date.today().year + 1
