@@ -12,6 +12,7 @@ def main():
     pass
 
 
+
 def check_filenames(files: Any) -> list:
     """Проверяет список файлов с которыми мы будем работать на корректность названия
 
@@ -46,6 +47,22 @@ def filename_validator(filename: str) -> bool:
                  filename):
         return True
     return False
+
+
+def extract_data_from_filename(filename: str) -> dict[str, int]:
+    """
+    :param filename:
+    :return:
+    """
+
+    namings = ["specialization", "fgos_standard", "course_numbers", "class_base", "entry_year"]
+    name = filename.split("/")[-1]
+    file_data = name.replace("_", "-").rstrip(".").split("-")[:-1]
+    file_data.pop(1)  # Удаление ненужной части
+    file_data.remove("2843")  # Удаления кода организации "2843"
+    if len(file_data) == 5:
+        file_dict = dict(zip(namings, file_data))
+        return file_dict
 
 
 if __name__ == '__main__':
