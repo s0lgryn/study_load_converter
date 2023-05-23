@@ -13,15 +13,6 @@ from requirements.dependencies import COLUMNS
 
 # TODO написать docstring к каждой функции
 def main():
-    # ОТЛАДКА
-    # filename = [
-    #     "44.02.04_52-14-1234-2843-09-2019_СДО.osf.plx",
-    #     "21.02.19_51-22-1234-2843_09-2023_ЗУ.plx", "40.02.02_51-14-1234-2843-11-2023_ПД.plx",
-    #     "38.02.06-123-2843-09-2021_ФИН.osf", "40.02.03-51-14-12-2843-11-2022_ПСА.osf.xls"
-    # ]
-
-    # print(extract_data_from_filename("study_plans/test_plans/09.02.07_51-16-123-2843_11-2023_ИСП.plx.xlsx"))
-    # wb = openpyxl.load_workbook("study_plans/test_plans/09.02.07_51-16-123-2843_11-2023_ИСП.plx.xlsx")
     files = os.listdir("study_plans/test_plans")
     for file in files:
         # file.replace(".plx", "")
@@ -32,7 +23,7 @@ def main():
         entry_year = find_entry_year(title_sheet)
         print(entry_year)
         min_col, max_col = find_course_boundaries(sheet=plan_sheet, today_year=2024, entry_year=int(entry_year))
-        disciplines_col = find_disciplines_coordinate(sheet=plan_sheet)
+        disciplines_col = find_disciplines_column(sheet=plan_sheet)
         study_load = parse_study_load(sheet=plan_sheet, min_course_col=min_col, max_course_col=max_col,
                                       disciplines_col=disciplines_col)
         print(study_load)
@@ -96,17 +87,6 @@ def extract_data_from_filename(filename: str) -> dict[str, int]:
         return file_dict
 
 
-def find_entry_year1(title_sheet: Worksheet) -> int:
-    cell: Cell
-    pattern = re.compile(r"^\d{4}$")
-    for row in title_sheet.iter_rows(min_row=20, max_row=60):
-        for cell in row:
-            if cell.value is not None and isinstance(cell.value, str) and pattern.search(cell.value):
-                return int(cell.value)
-    print("Не был найден год поступления.")
-
-
-# TODO Сравнить какая быстрее
 def find_entry_year(title_sheet: Worksheet) -> int:
     pattern = re.compile(r"^\d{4}$")
     for row in title_sheet.iter_rows(min_row=20, max_row=60, values_only=True):
@@ -131,6 +111,53 @@ def find_course_boundaries(sheet: Worksheet, today_year: int, entry_year: int) -
     except Exception as e:
         print(f"Границы курса были не найдены. {e}")
     return None
+
+
+def find_disciplines_column(sheet: Worksheet) -> int:
+    cell: Cell
+    pattern = r"\Наименование$"
+    try:
+        for row in sheet.iter_rows(max_row=10):
+            for cell in row:
+                if cell.value and isinstance(cell.value, str) and re.search(pattern, cell.value):
+                    return cell.column
+    except Exception as e:
+        print(f"Не найден столбец в котором содержатся дисциплины {e}")
+
+
+# TODO может не захватывать данные типа: "ПДП", предусмотреть.
+def parse_disciplines(sheet: Worksheet) -> DataFrame:
+    cell: Cell
+    columns = ["Шифр дисциплины", "Наименование дисциплины"]
+    data = pd.DataFrame(columns=columns)
+    pattern = r"[а-яА-Я]{1,}\.\d{1,3}"  # https://regex101.com/r/Htwvzy/1
+
+    for row in sheet.iter_rows():
+        for i, cell in enumerate(row):
+            if cell.value and isinstance(cell.value, str) and re.search(pattern, cell.value):
+                data.loc[len(data)] = [cell.value, ""]
+                # получаем индекс последней добавленной строки в DataFrame
+                last_idx = len(data) - 1
+                # добавляем значение следующей за текущей ячейки во второй столбец
+                if i + 1 < len(row):
+                    data.at[last_idx, "Наименование дисциплины"] = row[i + 1].value
+    return data
+
+
+# TODO понять как добавлять данные только из тех строк, которые хранятся в DF[Наименование дисциплины] из пред. функции
+def parse_study_load(sheet: Worksheet, min_course_col: int, max_course_col: int, disciplines_col: int) -> DataFrame:
+    cell: Cell
+    columns = ["Шифр дисциплины", "Наименование дисциплины"]
+    data = pd.DataFrame(columns=columns)
+    pattern = r"[а-яА-Я]{1,}\.\d{1,3}"
+    row_in_dataframe = 0
+    for row in sheet.iter_rows(min_col=disciplines_col - 1, max_col=disciplines_col, values_only=True):
+        for cell in row:
+            if cell and isinstance(cell, str) and re.search(pattern, cell):
+                data.at[row_in_dataframe, "Шифр дисциплины"] = row[0]
+                data.at[row_in_dataframe, "Наименование дисциплины"] = row[1]
+                row_in_dataframe += 1
+    return data
 
 
 if __name__ == '__main__':
