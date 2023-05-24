@@ -1,38 +1,37 @@
 import pandas as pd
-import os
 import re
-from typing import List, Any, Union
-
-import openpyxl
-from openpyxl.cell.cell import Cell
+from typing import List, Any, Union, Literal
+import openpyxl as opx
 from openpyxl.worksheet.worksheet import Worksheet
 from pandas import DataFrame
 
-from requirements.dependencies import COLUMNS
+# from requirements.dependencies import COLUMNS
 
 
 # TODO написать docstring к каждой функции
 def main():
-    files = os.listdir("study_plans/test_plans")
-    for file in files:
-        # file.replace(".plx", "")
-        wb = openpyxl.load_workbook("study_plans/test_plans/" + file)
-        title_sheet = wb["Титул"]
-        plan_sheet = wb["План"]
-        disciplines_sheet = wb["Компетенции"]
-        entry_year = find_entry_year(title_sheet)
-        print(entry_year)
-        min_col, max_col = find_course_boundaries(sheet=plan_sheet, today_year=2024, entry_year=int(entry_year))
-        disciplines_col = find_disciplines_column(sheet=plan_sheet)
-        study_load = parse_study_load(sheet=plan_sheet, min_course_col=min_col, max_course_col=max_col,
-                                      disciplines_col=disciplines_col)
-        print(study_load)
-        disciplines = (parse_disciplines(disciplines_sheet))
-        print(disciplines)
-        # unique_disciplines = disciplines["Шифр дисциплины"].unique()
-        # print(unique_disciplines)
-        # study_load_filtered = study_load[study_load["Шифр дисциплины"].isin(unique_disciplines)]
-        # print(study_load_filtered.to_string())
+    # files = os.listdir("study_plans/test_plans")
+    # for file in files:
+    # file.replace(".plx", "")
+    wb = opx.load_workbook("study_plans/test_plans/09.02.07_51-16-123-2843_11-2023_ИСП.plx.xlsx")
+    # extract_data_from_filename("09.02.07_51-16-123-2843_11-2023_ИСП.plx.xlsx")
+    title_sheet = wb["Титул"]
+    plan_sheet = wb["План"]
+    disciplines_sheet = wb["Компетенции"]
+    entry_year = find_entry_year(title_sheet)
+    print(entry_year)
+    min_col, max_col = find_course_boundaries(sheet=plan_sheet, today_year=2024, entry_year=int(entry_year))
+    print(min_col, max_col, "Писька")
+    # disciplines_col = find_disciplines_column(sheet=plan_sheet)
+    # study_load = parse_study_load(sheet=plan_sheet, min_course_col=min_col, max_course_col=max_col,
+    #                               disciplines_col=disciplines_col)
+    # print(study_load.to_string())
+    # disciplines = (parse_disciplines(disciplines_sheet))
+    # print(disciplines)
+    # unique_disciplines = disciplines["Шифр дисциплины"].unique()
+    # print(unique_disciplines)
+    # study_load_filtered = study_load[study_load["Шифр дисциплины"].isin(unique_disciplines)]
+    # print(study_load_filtered.to_string())
 
 
 def check_filenames(files: Any) -> list:
@@ -71,11 +70,8 @@ def filename_validator(filename: str) -> bool:
     return False
 
 
-def extract_data_from_filename(filename: str) -> dict[str, int]:
-    """
-    :param filename:
-    :return:
-    """
+def extract_data_from_filename(filename: str) -> dict[Literal["specialization", "fgos_standard", "course_numbers", "class_base", "entry_year"], str]:
+    """Извлечение данных из имени файла"""
 
     namings = ["specialization", "fgos_standard", "course_numbers", "class_base", "entry_year"]
     name = filename.split("/")[-1]
@@ -98,7 +94,6 @@ def find_entry_year(title_sheet: Worksheet) -> int:
 
 # TODO доделать что бы вывод возвращал 4 границы, по 2 для каждого семестра написать отдельную функцию поиска семестра
 def find_course_boundaries(sheet: Worksheet, today_year: int, entry_year: int) -> Union[List[int], None]:
-    cell: Cell
     course_number = today_year - entry_year + 1
     pattern = r"[а-яА-Я]{4}\s+" + str(course_number)
     try:
@@ -114,50 +109,50 @@ def find_course_boundaries(sheet: Worksheet, today_year: int, entry_year: int) -
 
 
 def find_disciplines_column(sheet: Worksheet) -> int:
-    cell: Cell
-    pattern = r"\Наименование$"
-    try:
-        for row in sheet.iter_rows(max_row=10):
-            for cell in row:
-                if cell.value and isinstance(cell.value, str) and re.search(pattern, cell.value):
-                    return cell.column
-    except Exception as e:
-        print(f"Не найден столбец в котором содержатся дисциплины {e}")
+    pattern = re.compile(r'Наименование$')
+    for row in sheet.iter_rows(min_row=1, max_row=10):
+        for cell in row:
+            if isinstance(cell.value, str) and pattern.search(cell.value):
+                return cell.column
 
 
 # TODO может не захватывать данные типа: "ПДП", предусмотреть.
 def parse_disciplines(sheet: Worksheet) -> DataFrame:
-    cell: Cell
-    columns = ["Шифр дисциплины", "Наименование дисциплины"]
-    data = pd.DataFrame(columns=columns)
-    pattern = r"[а-яА-Я]{1,}\.\d{1,3}"  # https://regex101.com/r/Htwvzy/1
+    data = pd.DataFrame(columns=["Шифр дисциплины", "Наименование дисциплины"])
+    pattern = re.compile(r"[а-яА-Я]+\.\d{1,3}")  # https://regex101.com/r/Htwvzy/1
+
+    def is_discipline(cell):
+        return cell.value and isinstance(cell.value, str) and pattern.search(cell.value)
 
     for row in sheet.iter_rows():
-        for i, cell in enumerate(row):
-            if cell.value and isinstance(cell.value, str) and re.search(pattern, cell.value):
-                data.loc[len(data)] = [cell.value, ""]
-                # получаем индекс последней добавленной строки в DataFrame
-                last_idx = len(data) - 1
-                # добавляем значение следующей за текущей ячейки во второй столбец
-                if i + 1 < len(row):
-                    data.at[last_idx, "Наименование дисциплины"] = row[i + 1].value
+        discipline_cell = next((cell for cell in row if is_discipline(cell)), None)
+        if not discipline_cell:
+            continue
+        data.loc[len(data)] = [discipline_cell.value, ""]
+        last_idx = len(data) - 1
+        next_cell_index = discipline_cell.column + 1
+        if next_cell_index <= row[-1].column:
+            data.at[last_idx, "Наименование дисциплины"] = row[next_cell_index - 1].value
+
     return data
 
 
 # TODO понять как добавлять данные только из тех строк, которые хранятся в DF[Наименование дисциплины] из пред. функции
 def parse_study_load(sheet: Worksheet, min_course_col: int, max_course_col: int, disciplines_col: int) -> DataFrame:
-    cell: Cell
-    columns = ["Шифр дисциплины", "Наименование дисциплины"]
-    data = pd.DataFrame(columns=columns)
-    pattern = r"[а-яА-Я]{1,}\.\d{1,3}"
-    row_in_dataframe = 0
+    disciplines_data = []
+    disciplines_pattern = re.compile(r'[а-яА-Я]+\.\d{1,3}')
+
+    # iterate over rows in range
     for row in sheet.iter_rows(min_col=disciplines_col - 1, max_col=disciplines_col, values_only=True):
-        for cell in row:
-            if cell and isinstance(cell, str) and re.search(pattern, cell):
-                data.at[row_in_dataframe, "Шифр дисциплины"] = row[0]
-                data.at[row_in_dataframe, "Наименование дисциплины"] = row[1]
-                row_in_dataframe += 1
-    return data
+        if row[0] and row[1]:
+            match = disciplines_pattern.search(row[0])
+            if match:
+                disciplines_data.append([row[0], row[1]])
+
+    for row in sheet.iter_rows(min_col=min_course_col, max_col=max_course_col, values_only=True):
+        pass
+
+    return pd.DataFrame(disciplines_data, columns=["Шифр дисциплины", "Наименование дисциплины"])
 
 
 if __name__ == '__main__':
