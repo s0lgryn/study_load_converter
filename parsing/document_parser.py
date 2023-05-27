@@ -1,40 +1,39 @@
 import pandas as pd
 import re
-from typing import List, Any, Union, Literal
+from typing import List, Any, Union, Literal, Optional
 import openpyxl as opx
 from openpyxl.worksheet.worksheet import Worksheet
 from pandas import DataFrame
+
+from requirements.dependencies import COLUMNS, SPECIALIZATIONS
+
 
 # from requirements.dependencies import COLUMNS
 
 
 # TODO написать docstring к каждой функции
 def main():
-    # files = os.listdir("study_plans/test_plans")
-    # for file in files:
-    # file.replace(".plx", "")
-    wb = opx.load_workbook("study_plans/test_plans/09.02.07_51-16-123-2843_11-2023_ИСП.plx.xlsx")
-    # extract_data_from_filename("09.02.07_51-16-123-2843_11-2023_ИСП.plx.xlsx")
+    wb = opx.load_workbook("../study_plans/test_plans/09.02.07_51-16-123-2843_11-2023_ИСП.plx.xlsx")
+
     title_sheet = wb["Титул"]
     plan_sheet = wb["План"]
-    disciplines_sheet = wb["Компетенции"]
-    entry_year = find_entry_year(title_sheet)
-    print(entry_year)
-    min_col, max_col = find_course_boundaries(sheet=plan_sheet, today_year=2024, entry_year=int(entry_year))
-    print(min_col, max_col, "Писька")
-    # disciplines_col = find_disciplines_column(sheet=plan_sheet)
-    # study_load = parse_study_load(sheet=plan_sheet, min_course_col=min_col, max_course_col=max_col,
-    #                               disciplines_col=disciplines_col)
-    # print(study_load.to_string())
-    # disciplines = (parse_disciplines(disciplines_sheet))
-    # print(disciplines)
-    # unique_disciplines = disciplines["Шифр дисциплины"].unique()
-    # print(unique_disciplines)
-    # study_load_filtered = study_load[study_load["Шифр дисциплины"].isin(unique_disciplines)]
-    # print(study_load_filtered.to_string())
+
+    entry_year = find_entry_year(sheet=title_sheet)
+    group_name = get_group_name(filename="09.02.07_51-16-123-2843_11-2023_ИСП.plx.xlsx", entry_year=entry_year)
+    education_form = find_education_form(sheet=title_sheet)
+    print("entry year: ", entry_year)
+    print("education form: ", education_form)
+    first_semester, second_semester = find_semester_boundaries(sheet=plan_sheet, today_year=2024,
+                                                               entry_year=int(entry_year))
+
+    disciplines_col = find_disciplines_column(sheet=plan_sheet)
+    print("d_col: ", disciplines_col)
+    study_load = parse_study_load(sheet=plan_sheet, first_semester=first_semester, second_semester=second_semester,
+                                  disciplines_col=disciplines_col)
+    format_to_converter(study_load=study_load, group_name=group_name, education_form=education_form)
 
 
-def check_filenames(files: Any) -> list:
+def check_filenames(files: Any) -> List[str]:
     """Проверяет список файлов с которыми мы будем работать на корректность названия
 
     :param files: Список файлов которые выбрал пользователь
@@ -47,10 +46,10 @@ def check_filenames(files: Any) -> list:
     for file in files:
         if filename_validator(file):
             valid_files.append(file)
-            print(f"Имя файла: {file} корректно")
+            print(f"[+]: {file} валидно")
         else:
             invalid_files.append(file)
-            print(f"Имя файла: {file} не корректно")
+            print(f"[ERR]: {file} не валидно")
     return valid_files
 
 
@@ -70,53 +69,85 @@ def filename_validator(filename: str) -> bool:
     return False
 
 
-def extract_data_from_filename(filename: str) -> dict[Literal["specialization", "fgos_standard", "course_numbers", "class_base", "entry_year"], str]:
-    """Извлечение данных из имени файла"""
+def get_group_name(filename: str, entry_year: int) -> str:
+    """Из имени файла извлекается код специальности, база класса,
+    и год поступления передается из результата другой функции. В результате формируется имя группы:
+    год-сокращение_специальности-класса"""
 
-    namings = ["specialization", "fgos_standard", "course_numbers", "class_base", "entry_year"]
-    name = filename.split("/")[-1]
-    file_data = name.replace("_", "-").rstrip(".").split("-")[:-1]
-    file_data.pop(1)  # Удаление ненужной части
-    file_data.remove("2843")  # Удаления кода организации "2843"
-    if len(file_data) == 5:
-        file_dict = dict(zip(namings, file_data))
-        return file_dict
+    data_labels = ["specialization", "fgos_standard", "course_numbers", "class_base", "entry_year"]
+    file_name = filename.split("/")[-1]
+    file_data_list = file_name.replace("_", "-").rstrip(".").split("-")[:-1]
+    file_data_list.pop(1)  # Удаление ненужной части
+    file_data_list.remove("2843")  # Удаления кода организации "2843"
+    specialization_key = file_data_list[0]
+    group_classbase = file_data_list[3]
+    group_codename = SPECIALIZATIONS[specialization_key][0]
+    group_name = f"{entry_year[-2:]}-{group_codename}-{group_classbase}"
+    return group_name
 
 
-def find_entry_year(title_sheet: Worksheet) -> int:
+def find_education_form(sheet: Worksheet) -> Optional[str]:
+    forms_dict = {"Очная": "ОФО",
+                  "Очно-заочная": "ОЗФО",
+                  "Заочная": "ЗФО"}
+    pattern = re.compile(r':\s(\S+)')
+    for row in sheet.iter_rows(min_row=30, max_row=60, values_only=True):
+        for cell in row:
+            if cell and pattern.search(str(cell)):
+                education_form = pattern.search(str(cell)).group(1)
+                education_form = forms_dict[education_form]
+                return education_form
+    return None
+
+
+def find_entry_year(sheet: Worksheet) -> Optional[int]:
     pattern = re.compile(r"^\d{4}$")
-    for row in title_sheet.iter_rows(min_row=20, max_row=60, values_only=True):
+    for row in sheet.iter_rows(min_row=30, max_row=60, values_only=True):
         year_cell = next((cell for cell in row if cell and re.match(pattern, str(cell))), None)
         if year_cell:
             return year_cell
-    print("Не был найден год поступления.")
-
-
-# TODO доделать что бы вывод возвращал 4 границы, по 2 для каждого семестра написать отдельную функцию поиска семестра
-def find_course_boundaries(sheet: Worksheet, today_year: int, entry_year: int) -> Union[List[int], None]:
-    course_number = today_year - entry_year + 1
-    pattern = r"[а-яА-Я]{4}\s+" + str(course_number)
-    try:
-        for row in sheet.iter_rows(max_row=5):
-            for cell in row:
-                if cell.value and isinstance(cell.value, str) and re.search(pattern, cell.value):
-                    for merged_range in sheet.merged_cells.ranges:
-                        if cell.coordinate in merged_range:
-                            return [merged_range.min_col, merged_range.max_col]
-    except Exception as e:
-        print(f"Границы курса были не найдены. {e}")
     return None
+
+
+def find_semester_boundaries(sheet: Worksheet, today_year: int, entry_year: int):
+    course_number = today_year - entry_year + 1
+    course_boundaries = []
+    semester_data = []
+    pattern = re.compile(r"^[Кк]урс\s+" + str(course_number))
+
+    for row in sheet.iter_rows(max_row=5):
+        for cell in row:
+            if isinstance(cell.value, str) and pattern.search(cell.value):
+                for merged_range in sheet.merged_cells.ranges:
+                    if cell.coordinate in merged_range:
+                        course_boundaries.extend([merged_range.min_col, merged_range.max_col, merged_range.min_row,
+                                                  merged_range.max_row])
+        break
+
+    for row in sheet.iter_rows(min_col=course_boundaries[0], max_col=course_boundaries[1], min_row=course_boundaries[2],
+                               max_row=course_boundaries[3] + 1):
+        for cell in row:
+            if isinstance(cell.value, str) and cell.value.startswith("Семестр"):
+                for merged_range in sheet.merged_cells.ranges:
+                    if cell.coordinate in merged_range:
+                        match = re.search(r'Семестр\s+(\d+)', cell.value)
+                        semester_number = int(match.group(1))
+                        match = re.search(r'(\d+) нед\]', cell.value)
+                        semester_length = int(match.group(1))
+                        semester_data.append([merged_range.min_col, merged_range.max_col, merged_range.min_row,
+                                              merged_range.max_row, course_number, semester_number, semester_length])
+
+    return semester_data
 
 
 def find_disciplines_column(sheet: Worksheet) -> int:
     pattern = re.compile(r'Наименование$')
-    for row in sheet.iter_rows(min_row=1, max_row=10):
+    for row in sheet.iter_rows(min_row=1, max_row=10, max_col=5):
         for cell in row:
             if isinstance(cell.value, str) and pattern.search(cell.value):
                 return cell.column
 
 
-# TODO может не захватывать данные типа: "ПДП", предусмотреть.
 def parse_disciplines(sheet: Worksheet) -> DataFrame:
     data = pd.DataFrame(columns=["Шифр дисциплины", "Наименование дисциплины"])
     pattern = re.compile(r"[а-яА-Я]+\.\d{1,3}")  # https://regex101.com/r/Htwvzy/1
@@ -137,22 +168,83 @@ def parse_disciplines(sheet: Worksheet) -> DataFrame:
     return data
 
 
-# TODO понять как добавлять данные только из тех строк, которые хранятся в DF[Наименование дисциплины] из пред. функции
-def parse_study_load(sheet: Worksheet, min_course_col: int, max_course_col: int, disciplines_col: int) -> DataFrame:
+def parse_study_load(
+        sheet: Worksheet, first_semester: List[int], second_semester: List[int],
+        disciplines_col: int) -> List[DataFrame]:
     disciplines_data = []
+    first_semester_data = []
+    second_semester_data = []
     disciplines_pattern = re.compile(r'[а-яА-Я]+\.\d{1,3}')
 
-    # iterate over rows in range
-    for row in sheet.iter_rows(min_col=disciplines_col - 1, max_col=disciplines_col, values_only=True):
-        if row[0] and row[1]:
-            match = disciplines_pattern.search(row[0])
-            if match:
-                disciplines_data.append([row[0], row[1]])
+    # Парсинг 1 семестра
+    for row in sheet.iter_rows(min_col=disciplines_col - 1, max_col=first_semester[1], values_only=False):
+        if row[0].value and row[1].value:
+            if not row[1].font.bold:
+                match = disciplines_pattern.search(row[0].value)
+                if match:
+                    disciplines_data.append([row[0].value, row[1].value])
+                    # Черная магия
+                    first_semester_data.append(
+                        [row[0].value, first_semester[4], first_semester[5], first_semester[6],
+                         *[cell.value for cell in row[first_semester[0] - 2:first_semester[1] + 1]],
+                         ])
 
-    for row in sheet.iter_rows(min_col=min_course_col, max_col=max_course_col, values_only=True):
-        pass
+    # Парсинг 2 семестра
+    for row in sheet.iter_rows(min_col=disciplines_col - 1, max_col=second_semester[1], values_only=False):
+        if row[0].value and row[1].value:
+            if not row[1].font.bold:
+                match = disciplines_pattern.search(row[0].value)
+                if match:
+                    # Черная магия
+                    second_semester_data.append(
+                        [row[0].value, second_semester[4], second_semester[5], second_semester[6],
+                         *[cell.value for cell in row[second_semester[0] - 2:second_semester[1] + 1]],
+                         ])
 
-    return pd.DataFrame(disciplines_data, columns=["Шифр дисциплины", "Наименование дисциплины"])
+    disciplines_df = pd.DataFrame(disciplines_data,
+                                  columns=["Шифр дисциплины", "Наименование дисциплины"])
+
+    first_semester_df = pd.DataFrame(first_semester_data,
+                                     columns=["Шифр дисциплины", "Курс", "Семестр",
+                                              "Число учебных недель", "Итого", "С преп.", "Лекции", "ПР", "КРП",
+                                              "ИП", "Конс", "СР", "ПАтт"])
+    second_semester_df = pd.DataFrame(second_semester_data,
+                                      columns=["Шифр дисциплины", "Курс", "Семестр",
+                                               "Число учебных недель", "Итого", "С преп.", "Лекции", "ПР", "КРП",
+                                               "ИП", "Конс", "СР", "ПАтт"])
+
+    return [disciplines_df, first_semester_df, second_semester_df]
+
+
+# TODO доделать вторую половину таблицы, понять откуда парсить "Продолжительность практики (нед)",
+# TODO спарсить "Форма контроля c листа "План"
+def format_to_converter(study_load: List[DataFrame], group_name: str, education_form: str):
+    disciplines_df, first_semester_df, second_semester_df = study_load
+    print(disciplines_df.to_string())
+    print(first_semester_df.to_string())
+    print(second_semester_df.to_string())
+    cols = pd.DataFrame()
+    result = pd.concat([cols, disciplines_df[["Наименование дисциплины", "Шифр дисциплины"]]], axis=1)
+    result[COLUMNS[2]] = education_form  # TODO вставлять форму обучения с листа "Титул"
+    result[COLUMNS[3]] = group_name
+    fsem = pd.merge(result[
+                        first_semester_df["Итого"].notna() | first_semester_df["С преп."].notna() |
+                        first_semester_df['Лекции'].notna() | first_semester_df['ПР'].notna() |
+                        first_semester_df['КРП'].notna() | first_semester_df['ИП'].notna() |
+                        first_semester_df['Конс'].notna() | first_semester_df['СР'].notna() |
+                        first_semester_df['ПАтт'].notna()
+                        ], first_semester_df, on='Шифр дисциплины')
+    ssem = pd.merge(result[
+                        second_semester_df["Итого"].notna() | second_semester_df["С преп."].notna() |
+                        second_semester_df['Лекции'].notna() | second_semester_df['ПР'].notna() |
+                        second_semester_df['КРП'].notna() | second_semester_df['ИП'].notna() |
+                        second_semester_df['Конс'].notna() | second_semester_df['СР'].notna() |
+                        second_semester_df['ПАтт'].notna()
+                        ], second_semester_df, on='Шифр дисциплины')
+    result = pd.concat([fsem, ssem], ignore_index=True)
+    for i in range(6, 9):
+        result.insert(loc=i, column=COLUMNS[i], value="")
+    print("result\n", result.to_string())
 
 
 if __name__ == '__main__':
