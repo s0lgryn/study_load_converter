@@ -90,13 +90,14 @@ def find_education_form(sheet: Worksheet) -> Optional[str]:
     forms_dict = {"Очная": "ОФО",
                   "Очно-заочная": "ОЗФО",
                   "Заочная": "ЗФО"}
-    pattern = re.compile(r':\s(\S+)')
+    pattern = re.compile(r'(Очная|очно-заочная|заочная)')
     for row in sheet.iter_rows(min_row=30, max_row=60, values_only=True):
         for cell in row:
             if cell and pattern.search(str(cell)):
                 education_form = pattern.search(str(cell)).group(1)
-                education_form = forms_dict[education_form]
-                return education_form
+                if education_form in forms_dict:
+                    education_form = forms_dict[education_form]
+                    return education_form
     return None
 
 
@@ -206,12 +207,14 @@ def parse_study_load(
 
     first_semester_df = pd.DataFrame(first_semester_data,
                                      columns=["Шифр дисциплины", "Курс", "Семестр",
-                                              "Число учебных недель", "Итого", "С преп.", "Лекции", "ПР", "КРП",
-                                              "ИП", "Конс", "СР", "ПАтт"])
+                                              "Число учебных недель", "Всего часов", "Всего ауд. часов", "Лекции",
+                                              "Практические занятия", "КРП",
+                                              "ИП", "Консультации", "Сам.работа (по актуализ.ФГОС)", "Экзамены"])
     second_semester_df = pd.DataFrame(second_semester_data,
                                       columns=["Шифр дисциплины", "Курс", "Семестр",
-                                               "Число учебных недель", "Итого", "С преп.", "Лекции", "ПР", "КРП",
-                                               "ИП", "Конс", "СР", "ПАтт"])
+                                               "Число учебных недель", "Всего часов", "Всего ауд. часов", "Лекции",
+                                               "Практические занятия", "КРП",
+                                               "ИП", "Консультации", "Сам.работа (по актуализ.ФГОС)", "Экзамены"])
 
     return [disciplines_df, first_semester_df, second_semester_df]
 
@@ -225,25 +228,40 @@ def format_to_converter(study_load: List[DataFrame], group_name: str, education_
     print(second_semester_df.to_string())
     cols = pd.DataFrame()
     result = pd.concat([cols, disciplines_df[["Наименование дисциплины", "Шифр дисциплины"]]], axis=1)
-    result[COLUMNS[2]] = education_form  # TODO вставлять форму обучения с листа "Титул"
+    result[COLUMNS[2]] = education_form
     result[COLUMNS[3]] = group_name
     fsem = pd.merge(result[
-                        first_semester_df["Итого"].notna() | first_semester_df["С преп."].notna() |
-                        first_semester_df['Лекции'].notna() | first_semester_df['ПР'].notna() |
+                        first_semester_df["Всего часов"].notna() | first_semester_df["Всего ауд. часов"].notna() |
+                        first_semester_df['Лекции'].notna() | first_semester_df['Практические занятия'].notna() |
                         first_semester_df['КРП'].notna() | first_semester_df['ИП'].notna() |
-                        first_semester_df['Конс'].notna() | first_semester_df['СР'].notna() |
-                        first_semester_df['ПАтт'].notna()
+                        first_semester_df['Консультации'].notna() | first_semester_df['Сам.работа (по актуализ.ФГОС)'].notna() |
+                        first_semester_df['Экзамены'].notna()
                         ], first_semester_df, on='Шифр дисциплины')
     ssem = pd.merge(result[
-                        second_semester_df["Итого"].notna() | second_semester_df["С преп."].notna() |
-                        second_semester_df['Лекции'].notna() | second_semester_df['ПР'].notna() |
+                        second_semester_df["Всего часов"].notna() | second_semester_df["Всего ауд. часов"].notna() |
+                        second_semester_df['Лекции'].notna() | second_semester_df['Практические занятия'].notna() |
                         second_semester_df['КРП'].notna() | second_semester_df['ИП'].notna() |
-                        second_semester_df['Конс'].notna() | second_semester_df['СР'].notna() |
-                        second_semester_df['ПАтт'].notna()
+                        second_semester_df['Консультации'].notna() | second_semester_df['Сам.работа (по актуализ.ФГОС)'].notna() |
+                        second_semester_df['Экзамены'].notna()
                         ], second_semester_df, on='Шифр дисциплины')
+
     result = pd.concat([fsem, ssem], ignore_index=True)
     for i in range(6, 9):
         result.insert(loc=i, column=COLUMNS[i], value="")
+
+    result["КРП"] = result["КРП"].fillna(0).astype(int)
+    result["ИП"] = result["ИП"].fillna(0).astype(int)
+    _ = result["КРП"] + result["ИП"]
+    result.assign(КРП=_)
+    result = result.rename(columns={"КРП": COLUMNS[17]})
+    result = result.drop(["ИП"], axis=1)
+
+    result = result[["Наименование дисциплины", "Шифр дисциплины", "Форма обучения", "Номер группы",
+                     "Курс", "Семестр", "Студентов", "Потоков", "Групп",
+                     "Число учебных недель",
+                     "Лекции", "Практические занятия", "Консультации",
+                     "Экзамены", "Сам.работа (по актуализ.ФГОС)", "Курсовые работы / Индивидуальный проект",
+                     "Всего ауд. часов", "Всего часов"]]
     print("result\n", result.to_string())
 
 
