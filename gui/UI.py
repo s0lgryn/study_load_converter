@@ -1,11 +1,10 @@
 import datetime
 import os.path
-import time
 import tkinter as tk
 from tkinter import ttk, filedialog
 
-from parsing import preparation
-from parsing.document_parser import check_filenames
+from parsing.preparation import prepare
+from parsing.document_parser import check_filenames, run_parse
 
 
 class Converter(tk.Tk):
@@ -27,8 +26,8 @@ class Converter(tk.Tk):
         self.listbox_counter = tk.Label(self, text="Файлов выбрано: 0")
 
         self.year_label = tk.Label(self, text="Введите начало учебного года")
-        self.entry_var = tk.StringVar()
-        self.year_start = tk.Entry(self, textvariable=self.entry_var, validate="key")
+        self.year_var = tk.StringVar()
+        self.year_start = tk.Entry(self, textvariable=self.year_var, validate="key")
         self.year_start["validatecommand"] = (self.register(self.validate_input), '%P')
 
         self.select_button = tk.Button(self, text="Выбрать файлы", command=self.select_files, width=15)
@@ -65,7 +64,7 @@ class Converter(tk.Tk):
     def select_files(self):
         self.listbox.delete(0, tk.END)  # Очистка списка перед добавлением новых файлов
         self.files_list.clear()
-        user_files = filedialog.askopenfilenames()
+        user_files = filedialog.askopenfilenames(filetypes=[("Excel", "*.xlsx;*.xlsm;*.xltx;*.xltm")])
         files = check_filenames(user_files)
         for file in files:
             self.files_list.append(file)
@@ -92,10 +91,10 @@ class Converter(tk.Tk):
 
     def start_processing(self):
         year_start = self.year_start.get()
-        preparation.main()
+        prepare(year_start)
         print(year_start)
         for file in self.files_list:
-            time.sleep(1)
+            run_parse(file, year_start)
             self.update_progress()
 
 
