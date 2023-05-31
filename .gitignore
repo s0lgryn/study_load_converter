@@ -3,3 +3,4 @@
 /plan.txt
 /converter
 /study_plans
+*/__pycache__/
