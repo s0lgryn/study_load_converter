@@ -53,23 +53,38 @@ def run_parse(filename, year_from_user):
     return True
 
 
-def check_filenames(files: Any) -> List[str]:
+def finilaze_converted_file(year_from_user):
+    path = get_filepath(year_from_user)
+    wb = opx.load_workbook(path)
+    ws = wb.active
+    last_row = ws.max_row
+    subtotal_columns = ['M', 'N', 'O', 'P', 'Q', 'R', 'T']
+    for column in subtotal_columns:
+        ws[f'{column}{last_row + 2}'] = f'=SUBTOTAL(9,{column}13:{column}{last_row})'
+    ws[f'S{last_row + 2}'] = f'=SUM(M{last_row + 2}:N{last_row + 2}) + R{last_row + 2}'
+    ws[f'S{last_row + 3}'] = f'=S{last_row + 2}/720'
+    ws[f'T{last_row + 3}'] = f'=T{last_row + 2}/720'
+
+    wb.save(path)
+
+
+def check_filenames(filesnames: Any) -> List[str]:
     """Проверяет список файлов с которыми мы будем работать на корректность названия
 
-    :param files: Список файлов которые выбрал пользователь
-    :type files: List
+    :param filesnames: Список файлов которые выбрал пользователь
+    :type filesnames: List
     :returns: Список файлов прошедших валидацию
     :rtype: list
     """
     valid_files = []
     invalid_files = []
-    for file in files:
-        if filename_validator(file):
-            valid_files.append(file)
-            print(f"[+]: {file} валидно")
+    for filename in filesnames:
+        if filename_validator(filename):
+            valid_files.append(filename)
+            print(f"[+]: {filename} валидно")
         else:
-            invalid_files.append(file)
-            print(f"[ERR]: {file} не валидно")
+            invalid_files.append(filename)
+            print(f"[ERR]: {filename} не валидно")
     return valid_files
 
 
@@ -101,6 +116,8 @@ def get_group_name(filename: str, entry_year: int) -> List[str]:
     specialization_key = file_data_list[0]
     graduate_year = int(entry_year) + int(len(file_data_list[2]))
     group_classbase = file_data_list[3]
+    if group_classbase == "09":
+        group_classbase = 9
     group_codename = SPECIALIZATIONS[specialization_key][0]
     group_name = f"{entry_year[-2:]}-{group_codename}-{group_classbase}"
     return [group_name, graduate_year]
@@ -263,6 +280,8 @@ def parse_study_load(
 
     disciplines_df = pd.DataFrame(disciplines_data,
                                   columns=["Шифр дисциплины", "Наименование дисциплины"])
+    int_columns = ["Курс", "Семестр", "Число учебных недель", "Всего часов", "Всего ауд. часов", "Лекции",
+                   "Практические занятия", "КРП", "ИП", "Экзамены"]
     if len(first_semester_data[0]) == 13:
         columns = ["Шифр дисциплины", "Курс", "Семестр",
                    "Число учебных недель", "Всего часов", "Всего ауд. часов", "Лекции",
@@ -283,14 +302,26 @@ def parse_study_load(
                    "Число учебных недель", "Всего часов", "Всего ауд. часов", "Лекции", "Лаб",
                    "Практические занятия", "КРП",
                    "ИП", "Консультации", "Сам.работа (по актуализ.ФГОС)", "Экзамены"]
+        int_columns = ["Курс", "Семестр", "Число учебных недель", "Всего часов", "Всего ауд. часов",
+                       "Лекции", "Лаб", "Практические занятия", "КРП", "ИП", "Консультации", "Экзамены"]
+
     first_semester_df = pd.DataFrame(first_semester_data, columns=columns)
     second_semester_df = pd.DataFrame(second_semester_data, columns=columns)
+
+    def convert_to_int(value):
+        try:
+            return int(value)
+        except (TypeError, ValueError):
+            return None
+
+    for col in int_columns:
+        first_semester_df[col] = first_semester_df[col].apply(convert_to_int)
+        second_semester_df[col] = second_semester_df[col].apply(convert_to_int)
 
     return [disciplines_df, first_semester_df, second_semester_df]
 
 
 # TODO доделать вторую половину таблицы, понять откуда парсить "Продолжительность практики (нед)",
-# TODO спарсить "Форма контроля c листа "План"
 def format_to_converter(study_load: List[DataFrame], group_name: str, education_form: str,
                         first_semester_control, second_semester_control):
     disciplines_df, first_semester_df, second_semester_df = study_load
@@ -362,7 +393,7 @@ def format_to_converter(study_load: List[DataFrame], group_name: str, education_
     _ = result["КРП"] + result["ИП"]
     result = result.assign(КРП=_).rename(columns={"КРП": COLUMNS[17]})
     result = result.drop(["ИП"], axis=1)
-
+    result['Сам.работа (по актуализ.ФГОС)'] = " "
     result = result[["Наименование дисциплины", "Шифр дисциплины", "Форма обучения", "Номер группы",
                      "Курс", "Семестр",
                      "Студентов", "Потоков", "Групп",
@@ -371,26 +402,27 @@ def format_to_converter(study_load: List[DataFrame], group_name: str, education_
                      "Экзамены", "Сам.работа (по актуализ.ФГОС)", "Курсовые работы / Индивидуальный проект",
                      "Всего ауд. часов", "Всего часов", "Ф.И.О. преподавателя"]]
     result = result.replace(0, None)
-    result['Число учебных недель'] = result['Число учебных недель'].fillna(0).astype(int)
-    result['Лекции'] = result['Лекции'].fillna(0).astype(int)
-    result['Практические занятия'] = result['Практические занятия'].fillna(0).astype(int)
-    result['Консультации'] = result['Консультации'].fillna(0).astype(int)
-    result['Экзамены'] = result['Экзамены'].fillna(0).astype(int)
-    result['Сам.работа (по актуализ.ФГОС)'] = result['Сам.работа (по актуализ.ФГОС)'].fillna(0).astype(int)
-    result['Курсовые работы / Индивидуальный проект'] = result['Курсовые работы / Индивидуальный проект'].fillna(
-        0).astype(int)
-    result['Всего ауд. часов'] = result['Всего ауд. часов'].fillna(0).astype(int)
-    result['Всего часов'] = result['Всего часов'].fillna(0).astype(int)
+    # result['Число учебных недель'] = result['Число учебных недель'].fillna(0).astype(int)
+    # result['Лекции'] = result['Лекции'].fillna(0).astype(int)
+    # result['Практические занятия'] = result['Практические занятия'].fillna(0).astype(int)
+    # result['Консультации'] = result['Консультации'].fillna(0).astype(int)
+    # result['Экзамены'] = result['Экзамены'].fillna(0).astype(int)
+    # result['Сам.работа (по актуализ.ФГОС)'] = result['Сам.работа (по актуализ.ФГОС)'].fillna(0).astype(int)
+    # result['Курсовые работы / Индивидуальный проект'] = result['Курсовые работы / Индивидуальный проект'].fillna(
+    #     0).astype(int)
+    # result['Всего ауд. часов'] = result['Всего ауд. часов'].fillna(0).astype(int)
+    # result['Всего часов'] = result['Всего часов'].fillna(0).astype(int)
 
     print("result\n", result.to_string())
     return result
 
 
 if __name__ == '__main__':
-    # files = os.listdir("C:/Users/filip/PycharmProjects/work_plan_converter/study_plans/test_plans")
-    files = [
-        "C:/Users/filip/PycharmProjects/work_plan_converter/study_plans/test_plans/40.02.01_51-14-12-2843-11-2023_ПР.plx.xlsx",
-        "C:/Users/filip/PycharmProjects/work_plan_converter/study_plans/test_plans/21.02.19_51-22-1234-2843_09-2023_ЗУ.plx.xlsx"
-    ]
-    for file in files:
-        run_parse(file, year_from_user=2023)
+    # # files = os.listdir("C:/Users/filip/PycharmProjects/work_plan_converter/study_plans/test_plans")
+    # files = [
+    #     "C:/Users/filip/PycharmProjects/work_plan_converter/study_plans/test_plans/40.02.01_51-14-12-2843-11-2023_ПР.plx.xlsx",
+    #     "C:/Users/filip/PycharmProjects/work_plan_converter/study_plans/test_plans/21.02.19_51-22-1234-2843_09-2023_ЗУ.plx.xlsx"
+    # ]
+    # for file in files:
+    #     run_parse(file, year_from_user=2023)
+    finilaze_converted_file(year_from_user=2024)
