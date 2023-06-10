@@ -9,7 +9,6 @@ from parsing.preparation import get_filepath
 from requirements.dependencies import COLUMNS, SPECIALIZATIONS
 
 
-# TODO написать docstring к каждой функции
 def run_parse(filename, year_from_user):
     wb = opx.load_workbook(filename)
     title_sheet = wb["Титул"]
@@ -58,6 +57,17 @@ def finilaze_converted_file(year_from_user):
     wb = opx.load_workbook(path)
     ws = wb.active
     last_row = ws.max_row
+
+    for row in range(13, last_row + 1):
+        total_aud = f"=SUM(M{row},N{row},R{row})"
+        total = f"=SUM(S{row},O{row},P{row})"
+        additional = f"=T{row}/K{row}"
+        rounded_additional = f"=ROUND(V{row},0)"
+        ws[f"S{row}"] = total_aud
+        ws[f"T{row}"] = total
+        ws[f"V{row}"] = additional
+        ws[f"W{row}"] = rounded_additional
+
     subtotal_columns = ['M', 'N', 'O', 'P', 'Q', 'R', 'T']
     for column in subtotal_columns:
         ws[f'{column}{last_row + 2}'] = f'=SUBTOTAL(9,{column}13:{column}{last_row})'
@@ -65,6 +75,10 @@ def finilaze_converted_file(year_from_user):
     ws[f'S{last_row + 3}'] = f'=S{last_row + 2}/720'
     ws[f'T{last_row + 3}'] = f'=T{last_row + 2}/720'
 
+    ws[f'V{last_row + 2}'] = f'=SUBTOTAL(9,V13:V{last_row})'
+    ws[f'W{last_row + 2}'] = f'=SUBTOTAL(9,W13:W{last_row})'
+    ws[f'V{last_row + 3}'] = f'=V{last_row + 2}/2'
+    ws[f'W{last_row + 3}'] = f'=W{last_row + 2}/2'
     wb.save(path)
 
 
@@ -151,6 +165,8 @@ def find_semester_boundaries(sheet: Worksheet, today_year: int, entry_year: int)
     course_number = today_year - entry_year + 1
     course_boundaries = []
     semester_data = []
+    semester_number = ""
+    semester_length = ""
     pattern = re.compile(r"^[Кк]урс\s+" + str(course_number))
 
     for row in sheet.iter_rows(max_row=5):
@@ -168,10 +184,18 @@ def find_semester_boundaries(sheet: Worksheet, today_year: int, entry_year: int)
             if isinstance(cell.value, str) and cell.value.startswith("Семестр"):
                 for merged_range in sheet.merged_cells.ranges:
                     if cell.coordinate in merged_range:
-                        match = re.search(r'Семестр\s+(\d+)', cell.value)
-                        semester_number = int(match.group(1))
-                        match = re.search(r'(\d+) нед\]', cell.value)
-                        semester_length = int(match.group(1))
+                        try:
+                            match = re.search(r'Семестр\s+(\d+)', cell.value)
+                            semester_number = int(match.group(1))
+                        except Exception:
+                            print("На листе не была найдена ячейка со значением 'Семестр'")
+                        try:
+                            match = re.search(r'(?<=\[)\d+', cell.value)
+                            semester_length = int(match.group(0))
+                        except Exception:
+                            print(
+                                f"На листе не было найдено значение длинны для семестра '{cell.value}' "
+                                f"в ячейке: {cell.coordinate}")
                         semester_data.append([merged_range.min_col, merged_range.max_col, merged_range.min_row,
                                               merged_range.max_row, course_number, semester_number, semester_length])
 
@@ -280,8 +304,10 @@ def parse_study_load(
 
     disciplines_df = pd.DataFrame(disciplines_data,
                                   columns=["Шифр дисциплины", "Наименование дисциплины"])
-    int_columns = ["Курс", "Семестр", "Число учебных недель", "Всего часов", "Всего ауд. часов", "Лекции",
-                   "Практические занятия", "КРП", "ИП", "Экзамены"]
+    # int_columns = ["Курс", "Семестр", "Число учебных недель", "Всего часов", "Всего ауд. часов", "Лекции",
+    #                "Практические занятия", "КРП", "ИП", "Экзамены"]
+    int_columns = ["Курс", "Семестр", "Число учебных недель", "Всего часов", "Всего ауд. часов",
+                   "Лекции", "Лаб", "Практические занятия", "КРП", "ИП", "Консультации", "Экзамены"]
     if len(first_semester_data[0]) == 13:
         columns = ["Шифр дисциплины", "Курс", "Семестр",
                    "Число учебных недель", "Всего часов", "Всего ауд. часов", "Лекции",
@@ -302,8 +328,6 @@ def parse_study_load(
                    "Число учебных недель", "Всего часов", "Всего ауд. часов", "Лекции", "Лаб",
                    "Практические занятия", "КРП",
                    "ИП", "Консультации", "Сам.работа (по актуализ.ФГОС)", "Экзамены"]
-        int_columns = ["Курс", "Семестр", "Число учебных недель", "Всего часов", "Всего ауд. часов",
-                       "Лекции", "Лаб", "Практические занятия", "КРП", "ИП", "Консультации", "Экзамены"]
 
     first_semester_df = pd.DataFrame(first_semester_data, columns=columns)
     second_semester_df = pd.DataFrame(second_semester_data, columns=columns)
@@ -315,8 +339,10 @@ def parse_study_load(
             return None
 
     for col in int_columns:
-        first_semester_df[col] = first_semester_df[col].apply(convert_to_int)
-        second_semester_df[col] = second_semester_df[col].apply(convert_to_int)
+        if col in first_semester_df.columns:
+            first_semester_df[col] = first_semester_df[col].apply(convert_to_int)
+        if col in second_semester_df.columns:
+            second_semester_df[col] = second_semester_df[col].apply(convert_to_int)
 
     return [disciplines_df, first_semester_df, second_semester_df]
 
@@ -402,27 +428,18 @@ def format_to_converter(study_load: List[DataFrame], group_name: str, education_
                      "Экзамены", "Сам.работа (по актуализ.ФГОС)", "Курсовые работы / Индивидуальный проект",
                      "Всего ауд. часов", "Всего часов", "Ф.И.О. преподавателя"]]
     result = result.replace(0, None)
-    # result['Число учебных недель'] = result['Число учебных недель'].fillna(0).astype(int)
-    # result['Лекции'] = result['Лекции'].fillna(0).astype(int)
-    # result['Практические занятия'] = result['Практические занятия'].fillna(0).astype(int)
-    # result['Консультации'] = result['Консультации'].fillna(0).astype(int)
-    # result['Экзамены'] = result['Экзамены'].fillna(0).astype(int)
-    # result['Сам.работа (по актуализ.ФГОС)'] = result['Сам.работа (по актуализ.ФГОС)'].fillna(0).astype(int)
-    # result['Курсовые работы / Индивидуальный проект'] = result['Курсовые работы / Индивидуальный проект'].fillna(
-    #     0).astype(int)
-    # result['Всего ауд. часов'] = result['Всего ауд. часов'].fillna(0).astype(int)
-    # result['Всего часов'] = result['Всего часов'].fillna(0).astype(int)
+    order = list(result['Шифр дисциплины'].str.split('.').str.get(0).unique())
+    print("order: ", order)
+    if len(order) > 1:
+        cat = pd.Categorical(result['Шифр дисциплины'].str.split('.').str[0],
+                             categories=order)
+        result2 = result.groupby(cat).apply(
+            lambda x: x
+            .sort_values('Шифр дисциплины', key=lambda x: x.str.split('.').str[1]))\
+            .reset_index(drop=True)
+        # print("result\n", result)
 
-    print("result\n", result.to_string())
-    return result
-
-
-if __name__ == '__main__':
-    # # files = os.listdir("C:/Users/filip/PycharmProjects/work_plan_converter/study_plans/test_plans")
-    # files = [
-    #     "C:/Users/filip/PycharmProjects/work_plan_converter/study_plans/test_plans/40.02.01_51-14-12-2843-11-2023_ПР.plx.xlsx",
-    #     "C:/Users/filip/PycharmProjects/work_plan_converter/study_plans/test_plans/21.02.19_51-22-1234-2843_09-2023_ЗУ.plx.xlsx"
-    # ]
-    # for file in files:
-    #     run_parse(file, year_from_user=2023)
-    finilaze_converted_file(year_from_user=2024)
+    else:
+        result2 = result.sort_values(by=['Шифр дисциплины'],)
+    print("result2\n", result2)
+    return result2
