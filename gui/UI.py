@@ -4,7 +4,7 @@ import tkinter as tk
 from tkinter import ttk, filedialog
 
 from parsing.preparation import prepare
-from parsing.document_parser import check_filenames, run_parse
+from parsing.document_parser import check_filenames, run_parse, finilaze_converted_file
 
 
 class Converter(tk.Tk):
@@ -96,6 +96,8 @@ class Converter(tk.Tk):
         for file in self.files_list:
             run_parse(file, year_start)
             self.update_progress()
+        finilaze_converted_file(year_start)
+        print("Все файлы были сконвертированы!")
 
 
 app = Converter()
