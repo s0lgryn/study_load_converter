@@ -32,7 +32,8 @@ def check_is_file_exist(year_from_user) -> None:
         _sheet = header.active  # Выбираем лист
         new_sheet = header.copy_worksheet(_sheet)  # Создаем его копию
         new_sheet.title = f"Тарификация"  # Копии листа присваиваем новое имя
-        new_sheet['A6'].value = f"Нагрузка СПО на {today_year}-{next_year} учебный год ОФО																			"
+        new_sheet['A6'].value = f"Нагрузка СПО на {today_year}-{next_year} учебный год"
+        new_sheet.auto_filter.ref = 'A12:U12'
         header.remove(_sheet)  # Убираем лист со старым названием
         save_workbook(header, f"../{DATA_DIR}/{result_filename}")  # Сохраняем файл по новому адресу
 
