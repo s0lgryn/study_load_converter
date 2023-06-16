@@ -22,17 +22,12 @@ def run_parse(filename, year_from_user):
         return False
 
     education_form = find_education_form(sheet=title_sheet)
-    print("file:", filename)
-    print("entry year: ", entry_year)
-    print("group name: ", group_name)
-    print("education form: ", education_form)
 
     first_semester, second_semester = find_semester_boundaries(sheet=plan_sheet, today_year=year_from_user,
                                                                entry_year=int(entry_year))
-    print("first semester: ", first_semester)
-    print("second semester: ", second_semester)
+
     disciplines_col = find_disciplines_column(sheet=plan_sheet)
-    print("disp col: ", disciplines_col)
+
     study_load = parse_study_load(sheet=plan_sheet, first_semester=first_semester, second_semester=second_semester,
                                   disciplines_col=disciplines_col)
 
@@ -44,6 +39,14 @@ def run_parse(filename, year_from_user):
     result = format_to_converter(study_load=study_load, group_name=group_name, education_form=education_form,
                                  first_semester_control=first_semester_control,
                                  second_semester_control=second_semester_control)
+
+    print("Имя файла:", filename)
+    print("Год поступления: ", entry_year)
+    print("Название группы: ", group_name)
+    print("Форма обучения: ", education_form)
+    print("Границы первого семестра: ", first_semester)
+    print("Границы второго семестра: ", second_semester)
+    
     path = get_filepath((int(year_from_user)))
     tf = opx.load_workbook(path)
     tf_ws = tf['Тарификация']
