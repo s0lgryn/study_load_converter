@@ -440,6 +440,6 @@ def format_to_converter(study_load: List[DataFrame], group_name: str, education_
         # print("result\n", result)
 
     else:
-        result2 = result.sort_values(by=['Шифр дисциплины'],)
+        result2 = result.sort_values(by=['Шифр дисциплины', "Курс", "Семестр"],)
     print("result2\n", result2)
     return result2
